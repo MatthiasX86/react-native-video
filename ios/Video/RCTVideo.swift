@@ -75,9 +75,8 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
 #if canImport(RCTVideoCache)
     private let _videoCache:RCTVideoCachingHandler = RCTVideoCachingHandler()
 #endif
-
-#if TARGET_OS_IOS
-    private let _pip:RCTPictureInPicture = RCTPictureInPicture(self.onPictureInPictureStatusChanged, self.onRestoreUserInterfaceForPictureInPictureStop)
+#if os(iOS)
+    private var _pip:RCTPictureInPicture? = nil
 #endif
 
     // Events
@@ -111,6 +110,9 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
         _imaAdsManager = RCTIMAAdsManager(video: self)
 
         _eventDispatcher = eventDispatcher
+#if os(iOS)
+        _pip = RCTPictureInPicture(self.onPictureInPictureStatusChanged, self.onRestoreUserInterfaceForPictureInPictureStop)
+#endif
 
         NotificationCenter.default.addObserver(
             self,
@@ -243,7 +245,6 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
             }
             self.removePlayerLayer()
             self._playerObserver.player = nil
-            self._resouceLoaderDelegate = nil
             self._playerObserver.playerItem = nil
 
             // perform on next run loop, otherwise other passed react-props may not be set
@@ -395,15 +396,15 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
 
     @objc
     func setPictureInPicture(_ pictureInPicture:Bool) {
-#if TARGET_OS_IOS
-        _pip.setPictureInPicture(pictureInPicture)
+#if os(iOS)
+        _pip?.setPictureInPicture(pictureInPicture)
 #endif
     }
 
     @objc
     func setRestoreUserInterfaceForPIPStopCompletionHandler(_ restore:Bool) {
-#if TARGET_OS_IOS
-        _pip.setRestoreUserInterfaceForPIPStopCompletionHandler(restore)
+#if os(iOS)
+        _pip?.setRestoreUserInterfaceForPIPStopCompletionHandler(restore)
 #endif
     }
 
@@ -614,7 +615,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
     func setFullscreen(_ fullscreen:Bool) {
         if fullscreen && !_fullscreenPlayerPresented && _player != nil {
             // Ensure player view controller is not null
-            if _playerViewController == nil && _controls {
+            if _playerViewController == nil {
                 self.usePlayerViewController()
             }
 
@@ -638,7 +639,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
 
                 if let playerViewController = _playerViewController {
                     viewController.present(playerViewController, animated:true, completion:{
-                        self._playerViewController?.showsPlaybackControls = self._controls
+                        self._playerViewController?.showsPlaybackControls = true
                         self._fullscreenPlayerPresented = fullscreen
                         self._playerViewController?.autorotate = self._fullscreenAutorotate
 
@@ -694,7 +695,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
 
     func createPlayerViewController(player:AVPlayer, withPlayerItem playerItem:AVPlayerItem) -> RCTVideoPlayerViewController {
         let viewController = RCTVideoPlayerViewController()
-        viewController.showsPlaybackControls = self._controls
+        viewController.showsPlaybackControls = true
         viewController.rctDelegate = self
         viewController.preferredOrientation = _fullscreenOrientation
 
@@ -718,8 +719,8 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
                 self.layer.addSublayer(_playerLayer)
             }
             self.layer.needsDisplayOnBoundsChange = true
-#if TARGET_OS_IOS
-            _pip.setupPipController(_playerLayer)
+#if os(iOS)
+            _pip?.setupPipController(_playerLayer)
 #endif
         }
     }
@@ -751,6 +752,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
     }
 
     func removePlayerLayer() {
+        _resouceLoaderDelegate = nil
         _playerLayer?.removeFromSuperlayer()
         _playerLayer = nil
         _playerObserver.playerLayer = nil
@@ -836,6 +838,12 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
     // MARK: - React View Management
 
     func insertReactSubview(view:UIView!, atIndex:Int) {
+        // We are early in the game and somebody wants to set a subview.
+        // That can only be in the context of playerViewController.
+        if !_controls && (_playerLayer == nil) && (_playerViewController == nil) {
+            setControls(true)
+        }
+
         if _controls {
             view.frame = self.bounds
             _playerViewController?.contentOverlayView?.insertSubview(view, at:atIndex)
@@ -876,7 +884,6 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
     override func removeFromSuperview() {
         _player?.pause()
         _player = nil
-        _resouceLoaderDelegate = nil
         _playerObserver.clearPlayer()
 
         self.removePlayerLayer()
@@ -1001,8 +1008,6 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
         }
 
         if _videoLoadStarted {
-            let audioTracks = RCTVideoUtils.getAudioTrackInfo(_player)
-            let textTracks = RCTVideoUtils.getTextTrackInfo(_player).map(\.json)
             onVideoLoad?(["duration": NSNumber(value: duration),
                           "currentTime": NSNumber(value: Float(CMTimeGetSeconds(_playerItem.currentTime()))),
                           "canPlayReverse": NSNumber(value: _playerItem.canPlayReverse),
@@ -1016,8 +1021,8 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
                             "height": width != nil ? NSNumber(value: height!) : "undefinded",
                             "orientation": orientation
                           ],
-                          "audioTracks": audioTracks,
-                          "textTracks": textTracks,
+                          "audioTracks": RCTVideoUtils.getAudioTrackInfo(_player),
+                          "textTracks": _textTracks ?? RCTVideoUtils.getTextTrackInfo(_player),
                           "target": reactTag as Any])
         }
         _videoLoadStarted = false
@@ -1076,7 +1081,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
         let newRect = change.newValue
         if !oldRect!.equalTo(newRect!) {
             if newRect!.equalTo(UIScreen.main.bounds) {
-                RCTLog("in fullscreen")
+                NSLog("in fullscreen")
 
                 self.reactViewController().view.frame = UIScreen.main.bounds
                 self.reactViewController().view.setNeedsLayout()
