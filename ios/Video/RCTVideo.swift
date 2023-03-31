@@ -110,6 +110,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
         _imaAdsManager = RCTIMAAdsManager(video: self)
 
         _eventDispatcher = eventDispatcher
+
 #if os(iOS)
         _pip = RCTPictureInPicture(self.onPictureInPictureStatusChanged, self.onRestoreUserInterfaceForPictureInPictureStop)
 #endif
@@ -396,6 +397,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
 
     @objc
     func setPictureInPicture(_ pictureInPicture:Bool) {
+        debugPrint("RCTVideo: setPictureInPicture")
 #if os(iOS)
         _pip?.setPictureInPicture(pictureInPicture)
 #endif
@@ -720,6 +722,7 @@ class RCTVideo: UIView, RCTVideoPlayerViewControllerDelegate, RCTPlayerObserverH
             }
             self.layer.needsDisplayOnBoundsChange = true
 #if os(iOS)
+            debugPrint("RCTVideo: \(_pip)")
             _pip?.setupPipController(_playerLayer)
 #endif
         }

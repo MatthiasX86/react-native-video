@@ -47,13 +47,26 @@ class RCTPictureInPicture: NSObject, AVPictureInPictureControllerDelegate {
     }
     
     func setupPipController(_ playerLayer: AVPlayerLayer?) {
-        guard playerLayer != nil && AVPictureInPictureController.isPictureInPictureSupported() && _isActive else { return }
+        debugPrint("RCTVideo: well..")
+        debugPrint("RCTVideo: playerLayer \(playerLayer)")
+        debugPrint("RCTVideo: playerLayer boolean \(playerLayer != nil)")
+        debugPrint("RCTVideo: supported..\(AVPictureInPictureController.isPictureInPictureSupported())")
+        debugPrint("RCTVideo: _isActive..\(_isActive)")
+
+        let willEnterPictureInPicture = ( playerLayer != nil ) && AVPictureInPictureController.isPictureInPictureSupported()
+
+        debugPrint("RCTVideo: willEnterPictureInPicture \(willEnterPictureInPicture)")
+
+        guard willEnterPictureInPicture else { return }
+
+        debugPrint("RCTVideo: it is supported")
         // Create new controller passing reference to the AVPlayerLayer
         _pipController = AVPictureInPictureController(playerLayer:playerLayer!)
         _pipController?.delegate = self
     }
     
     func setPictureInPicture(_ isActive:Bool) {
+        debugPrint("RCTVideo: setPictureInPicture: isActive \(isActive)")
         if _isActive == isActive {
             return
         }
